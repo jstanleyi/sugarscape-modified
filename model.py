@@ -4,19 +4,22 @@ import numpy as np
 
 import mesa
 from agents import SugarAgent
-## Using discrete cell space for this model that enforces von Neumann neighborhoods
-from mesa.discrete_space import OrthogonalVonNeumannGrid
+from mesa.discrete_space import OrthogonalMooreGrid
 from mesa.discrete_space.property_layer import PropertyLayer
 
 class SugarScapeModel(mesa.Model):
-    ## Helper function to calculate Gini coefficient, used in plot
     def calc_gini(self):
         agent_sugars = [a.sugar for a in self.agents]
+        if len(agent_sugars) == 0:
+            return 0
         sorted_sugars = sorted(agent_sugars)
         n = len(sorted_sugars)
-        x = sum(el * (n - ind) for ind, el in enumerate(sorted_sugars)) / (n * sum(sorted_sugars))
+        total = sum(sorted_sugars)
+        if total == 0:
+            return 0
+        x = sum(el * (n - ind) for ind, el in enumerate(sorted_sugars)) / (n * total)
         return 1 + (1 / n) - 2 * x
-    ## Define initiation, inherit seed property from parent class
+    
     def __init__(
         self,
         width = 50,
@@ -31,26 +34,24 @@ class SugarScapeModel(mesa.Model):
         seed = None
     ):
         super().__init__(rng=seed)
-        ## Instantiate model parameters
         self.width = width
         self.height = height
-        ## Set model to run continuously
         self.running = True
-        ## Create grid
-        self.grid = OrthogonalVonNeumannGrid(
+
+        # Modification: from 4 neighbors to 8 neighbors
+        self.grid = OrthogonalMooreGrid(
             (self.width, self.height), torus=False, random=self.random
         )
-        ## Define datacollector, which calculates current Gini coefficient
+
         self.datacollector = mesa.DataCollector(
             model_reporters = {"Gini": self.calc_gini},
         )
-        ## Import sugar distribution from raster, define grid property
+        
         self.sugar_distribution = np.genfromtxt(Path(__file__).parent / "sugar-map.txt")
         self.grid.add_property_layer(
             PropertyLayer.from_data("sugar", self.sugar_distribution)
         )
 
-        ## Create agents, give them random properties, and place them randomly on the map
         SugarAgent.create_agents(
             self,
             initial_population,
@@ -65,15 +66,23 @@ class SugarScapeModel(mesa.Model):
                 vision_min, vision_max, (initial_population,), endpoint=True
             ),
         )
-        ## Initialize datacollector
+        
         self.datacollector.collect(self)
-    ## Define step: Sugar grows back at constant rate of 1, all agents move, then all agents consume, then all see if they die. Then model calculated Gini coefficient.
+    
+    # Define step:
+    # 1. Sugar grows back
+    # 2. All agents move
+    # 3. All agents gather and eat
+    # 4. All agents share with a vulnerable neighbor (Modification)
+    # 5. All agents check if they die
+    # 6. Collect Gini
     def step(self):
         self.grid.sugar.data = np.minimum(
             self.grid.sugar.data + 1, self.sugar_distribution
         )
         self.agents.shuffle_do("move")
         self.agents.shuffle_do("gather_and_eat")
+        self.agents.shuffle_do("share_with_neighbor")
         self.agents.shuffle_do("see_if_die")
         self.datacollector.collect(self)
     
