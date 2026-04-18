@@ -43,8 +43,16 @@ class SugarScapeModel(mesa.Model):
             (self.width, self.height), torus=False, random=self.random
         )
 
+        # Modification: more plots
         self.datacollector = mesa.DataCollector(
-            model_reporters = {"Gini": self.calc_gini},
+            model_reporters={
+                "Gini": self.calc_gini,
+                "Population": lambda m: len(m.agents),
+                "MeanSugar": lambda m: (
+                    sum(a.sugar for a in m.agents) / len(m.agents)
+                    if len(m.agents) > 0 else 0
+                ),
+            },
         )
         
         self.sugar_distribution = np.genfromtxt(Path(__file__).parent / "sugar-map.txt")
